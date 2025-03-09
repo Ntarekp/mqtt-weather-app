@@ -15,3 +15,8 @@ build/
 # Editor files
 .vscode/
 *.swp
+
+node_modules/
+*.log
+weather_data.db
+.env
