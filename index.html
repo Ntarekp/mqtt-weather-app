@@ -25,7 +25,7 @@
         }
         .container {
             width: 90%;
-            max-width: 1200px; /* Increased max-width for a wider graph */
+            max-width: 1200px;
             margin: 20px auto;
             padding: 20px;
             background: #fff;
@@ -61,7 +61,27 @@
             padding: 15px;
             border-radius: 12px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            height: 500px !important; /* Fixed height for a taller graph */
+            height: 500px !important;
+        }
+        .controls {
+            margin: 20px auto;
+            text-align: center;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            color: #fff;
+            background-color: #1e40af;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+        }
+        button:hover {
+            background-color: #1e3a8a;
+        }
+        button.active {
+            background-color: #16a34a; /* Green when real-time is active */
         }
     </style>
 </head>
@@ -75,7 +95,12 @@
         <p>Humidity: <span id="humidity" class="data">--</span> %</p>
     </div>
 
-    <!-- Chart.js for Historical Data -->
+    <!-- Controls for Real-Time Toggle -->
+    <div class="controls">
+        <button id="toggleRealTime">Enable Real-Time Updates</button>
+    </div>
+
+    <!-- Chart.js for Data -->
     <div class="container">
         <canvas id="weatherChart"></canvas>
     </div>
@@ -90,7 +115,7 @@
             mqttClient.subscribe("/work_group_01/room_temp/humidity");
         });
 
-        // Initialize Chart.js for historical and real-time data
+        // Initialize Chart.js
         const ctx = document.getElementById('weatherChart').getContext('2d');
         const gradientTemp = ctx.createLinearGradient(0, 0, 0, 500);
         gradientTemp.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
@@ -110,12 +135,12 @@
                         borderColor: '#ef4444',
                         backgroundColor: gradientTemp,
                         borderWidth: 3,
-                        pointRadius: 6,
-                        pointHoverRadius: 9,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
                         pointBackgroundColor: '#ef4444',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2,
-                        tension: 0.4,
+                        tension: 0.3,
                         fill: true,
                         data: [],
                     },
@@ -124,12 +149,12 @@
                         borderColor: '#3b82f6',
                         backgroundColor: gradientHumidity,
                         borderWidth: 3,
-                        pointRadius: 6,
-                        pointHoverRadius: 9,
+                        pointRadius: 4,
+                        pointHoverRadius: 7,
                         pointBackgroundColor: '#3b82f6',
                         pointBorderColor: '#fff',
                         pointBorderWidth: 2,
-                        tension: 0.4,
+                        tension: 0.3,
                         fill: true,
                         data: [],
                     }
@@ -164,7 +189,11 @@
                             font: { size: 18, weight: 'bold' },
                             color: '#1e40af',
                         },
-                        ticks: { color: '#4b5563', font: { size: 12 } },
+                        ticks: {
+                            color: '#4b5563',
+                            font: { size: 12 },
+                            maxTicksLimit: 10,
+                        },
                         grid: { color: 'rgba(0, 0, 0, 0.05)' }
                     },
                     y: {
@@ -179,8 +208,8 @@
                     }
                 },
                 animation: {
-                    duration: 1000, // Faster animation for real-time updates
-                    easing: 'easeOutQuart'
+                    duration: 500,
+                    easing: 'linear'
                 }
             }
         });
@@ -191,15 +220,39 @@
         ctx.shadowOffsetX = 4;
         ctx.shadowOffsetY = 4;
 
-        // Store latest temperature and humidity values
+        // Data storage and state
         let latestTemp = null;
         let latestHumidity = null;
+        let isRealTime = false;
+        let intervalId = null;
 
-        // Handle real-time MQTT messages
+        // Function to update chart with current data
+        function updateChart() {
+            const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+            const labels = weatherChart.data.labels;
+            const tempData = weatherChart.data.datasets[0].data;
+            const humidData = weatherChart.data.datasets[1].data;
+
+            if (latestTemp !== null || latestHumidity !== null) {
+                labels.push(now);
+                tempData.push(latestTemp);
+                humidData.push(latestHumidity);
+
+                // Limit to 30 points
+                if (labels.length > 30) {
+                    labels.shift();
+                    tempData.shift();
+                    humidData.shift();
+                }
+
+                weatherChart.update();
+            }
+        }
+
+        // Handle MQTT messages
         mqttClient.on('message', (topic, message) => {
             console.log(`Received: ${topic} → ${message.toString()}`);
             const value = parseFloat(message.toString());
-            const now = new Date().toLocaleTimeString(); // Get current time
 
             // Update live data display
             if (topic === "/work_group_01/room_temp/temperature") {
@@ -210,69 +263,50 @@
                 latestHumidity = value;
             }
 
-            // Update chart only when both values are available
-            if (latestTemp !== null && latestHumidity !== null) {
+            // Update chart immediately if real-time is enabled
+            if (isRealTime) {
+                const now = new Date().toLocaleTimeString('en-US', { hour12: false });
                 const labels = weatherChart.data.labels;
                 const tempData = weatherChart.data.datasets[0].data;
                 const humidData = weatherChart.data.datasets[1].data;
 
-                // Limit to 20 data points to prevent overcrowding
-                if (labels.length >= 20) {
+                if (labels.length === 0 || labels[labels.length - 1] !== now) {
+                    labels.push(now);
+                    tempData.push(latestTemp);
+                    humidData.push(latestHumidity);
+                } else {
+                    if (topic.includes("temperature")) tempData[tempData.length - 1] = latestTemp;
+                    if (topic.includes("humidity")) humidData[humidData.length - 1] = latestHumidity;
+                }
+
+                if (labels.length > 30) {
                     labels.shift();
                     tempData.shift();
                     humidData.shift();
                 }
 
-                labels.push(now);
-                tempData.push(latestTemp);
-                humidData.push(latestHumidity);
                 weatherChart.update();
             }
         });
 
-        // Function to fetch historical weather data from SQLite (initial load)
-        async function fetchWeatherData() {
-            try {
-                const response = await fetch("http://localhost:3000/data");
-                const data = await response.json();
-                
-                let timestamps = [];
-                let temperatures = [];
-                let humidities = [];
+        // Default: Update every 5 minutes
+        intervalId = setInterval(updateChart, 300000); // 5 minutes = 300,000 ms
 
-                // Group data by timestamp (assuming SQLite stores both temp and humidity)
-                const groupedData = {};
-                data.forEach(entry => {
-                    const time = entry.timestamp.split(" ")[1]; // Extract time
-                    if (!groupedData[time]) groupedData[time] = {};
-                    if (entry.topic.includes("temperature")) {
-                        groupedData[time].temp = parseFloat(entry.value);
-                    } else if (entry.topic.includes("humidity")) {
-                        groupedData[time].humidity = parseFloat(entry.value);
-                    }
-                });
-
-                // Populate arrays only with complete pairs
-                for (const time in groupedData) {
-                    if (groupedData[time].temp && groupedData[time].humidity) {
-                        timestamps.push(time);
-                        temperatures.push(groupedData[time].temp);
-                        humidities.push(groupedData[time].humidity);
-                    }
-                }
-
-                weatherChart.data.labels = timestamps;
-                weatherChart.data.datasets[0].data = temperatures;
-                weatherChart.data.datasets[1].data = humidities;
-                weatherChart.update();
-
-            } catch (error) {
-                console.error("Error fetching data:", error);
+        // Toggle real-time updates
+        const toggleButton = document.getElementById('toggleRealTime');
+        toggleButton.addEventListener('click', () => {
+            isRealTime = !isRealTime;
+            if (isRealTime) {
+                clearInterval(intervalId); // Stop 5-minute updates
+                toggleButton.textContent = 'Disable Real-Time Updates';
+                toggleButton.classList.add('active');
+                updateChart(); // Immediate update when enabling
+            } else {
+                intervalId = setInterval(updateChart, 300000); // Resume 5-minute updates
+                toggleButton.textContent = 'Enable Real-Time Updates';
+                toggleButton.classList.remove('active');
             }
-        }
-
-        // Initial fetch for historical data
-        fetchWeatherData();
+        });
     </script>
 
 </body>
