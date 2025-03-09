@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weather Station (MQTT + SQLite)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #e0eafc, #cfdef3);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h2 {
+            color: #1e3a8a;
+            font-size: 2.5em;
+            margin-top: 40px;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .container {
+            width: 90%;
+            max-width: 1200px; /* Increased max-width for a wider graph */
+            margin: 20px auto;
+            padding: 20px;
+            background: #fff;
+            border-radius: 15px;
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        .live-data {
+            margin: 30px auto;
+            padding: 25px;
+            width: 320px;
+            background: #ffffff;
+            border-radius: 12px;
+            border: 2px solid #1e40af;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        .live-data:hover {
+            transform: translateY(-5px);
+        }
+        .live-data p {
+            margin: 10px 0;
+            font-size: 1.1em;
+            color: #333;
+        }
+        .data {
+            font-size: 1.8em;
+            font-weight: bold;
+            color: #1e40af;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        canvas {
+            background: #ffffff;
+            padding: 15px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            height: 500px !important; /* Fixed height for a taller graph */
+        }
+    </style>
+</head>
+<body>
+
+    <h2>MQTT Weather Station</h2>
+    
+    <!-- Real-time Temperature and Humidity -->
+    <div class="live-data">
+        <p>Temperature: <span id="temp" class="data">--</span> °C</p>
+        <p>Humidity: <span id="humidity" class="data">--</span> %</p>
+    </div>
+
+    <!-- Chart.js for Historical Data -->
+    <div class="container">
+        <canvas id="weatherChart"></canvas>
+    </div>
+
+    <script>
+        // Connect to MQTT Broker over WebSockets
+        const mqttClient = mqtt.connect('ws://157.173.101.159:9001');
+
+        mqttClient.on('connect', () => {
+            console.log("Connected to MQTT via WebSockets");
+            mqttClient.subscribe("/work_group_01/room_temp/temperature");
+            mqttClient.subscribe("/work_group_01/room_temp/humidity");
+        });
+
+        // Initialize Chart.js for historical and real-time data
+        const ctx = document.getElementById('weatherChart').getContext('2d');
+        const gradientTemp = ctx.createLinearGradient(0, 0, 0, 500);
+        gradientTemp.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
+        gradientTemp.addColorStop(1, 'rgba(239, 68, 68, 0.1)');
+
+        const gradientHumidity = ctx.createLinearGradient(0, 0, 0, 500);
+        gradientHumidity.addColorStop(0, 'rgba(59, 130, 246, 0.9)');
+        gradientHumidity.addColorStop(1, 'rgba(59, 130, 246, 0.1)');
+
+        const weatherChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'Temperature (°C)',
+                        borderColor: '#ef4444',
+                        backgroundColor: gradientTemp,
+                        borderWidth: 3,
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        pointBackgroundColor: '#ef4444',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.4,
+                        fill: true,
+                        data: [],
+                    },
+                    {
+                        label: 'Humidity (%)',
+                        borderColor: '#3b82f6',
+                        backgroundColor: gradientHumidity,
+                        borderWidth: 3,
+                        pointRadius: 6,
+                        pointHoverRadius: 9,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.4,
+                        fill: true,
+                        data: [],
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        labels: {
+                            font: { size: 16, weight: 'bold' },
+                            color: '#1e3a8a',
+                            padding: 20,
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                        titleFont: { size: 14, weight: 'bold' },
+                        bodyFont: { size: 12 },
+                        padding: 12,
+                        cornerRadius: 6,
+                        borderWidth: 1,
+                        borderColor: '#1e40af',
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: "Time",
+                            font: { size: 18, weight: 'bold' },
+                            color: '#1e40af',
+                        },
+                        ticks: { color: '#4b5563', font: { size: 12 } },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: "Values",
+                            font: { size: 18, weight: 'bold' },
+                            color: '#1e40af',
+                        },
+                        ticks: { color: '#4b5563', font: { size: 12 } },
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    }
+                },
+                animation: {
+                    duration: 1000, // Faster animation for real-time updates
+                    easing: 'easeOutQuart'
+                }
+            }
+        });
+
+        // Add shadow effect to the chart
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetX = 4;
+        ctx.shadowOffsetY = 4;
+
+        // Store latest temperature and humidity values
+        let latestTemp = null;
+        let latestHumidity = null;
+
+        // Handle real-time MQTT messages
+        mqttClient.on('message', (topic, message) => {
+            console.log(`Received: ${topic} → ${message.toString()}`);
+            const value = parseFloat(message.toString());
+            const now = new Date().toLocaleTimeString(); // Get current time
+
+            // Update live data display
+            if (topic === "/work_group_01/room_temp/temperature") {
+                document.getElementById("temp").innerText = value;
+                latestTemp = value;
+            } else if (topic === "/work_group_01/room_temp/humidity") {
+                document.getElementById("humidity").innerText = value;
+                latestHumidity = value;
+            }
+
+            // Update chart only when both values are available
+            if (latestTemp !== null && latestHumidity !== null) {
+                const labels = weatherChart.data.labels;
+                const tempData = weatherChart.data.datasets[0].data;
+                const humidData = weatherChart.data.datasets[1].data;
+
+                // Limit to 20 data points to prevent overcrowding
+                if (labels.length >= 20) {
+                    labels.shift();
+                    tempData.shift();
+                    humidData.shift();
+                }
+
+                labels.push(now);
+                tempData.push(latestTemp);
+                humidData.push(latestHumidity);
+                weatherChart.update();
+            }
+        });
+
+        // Function to fetch historical weather data from SQLite (initial load)
+        async function fetchWeatherData() {
+            try {
+                const response = await fetch("http://localhost:3000/data");
+                const data = await response.json();
+                
+                let timestamps = [];
+                let temperatures = [];
+                let humidities = [];
+
+                // Group data by timestamp (assuming SQLite stores both temp and humidity)
+                const groupedData = {};
+                data.forEach(entry => {
+                    const time = entry.timestamp.split(" ")[1]; // Extract time
+                    if (!groupedData[time]) groupedData[time] = {};
+                    if (entry.topic.includes("temperature")) {
+                        groupedData[time].temp = parseFloat(entry.value);
+                    } else if (entry.topic.includes("humidity")) {
+                        groupedData[time].humidity = parseFloat(entry.value);
+                    }
+                });
+
+                // Populate arrays only with complete pairs
+                for (const time in groupedData) {
+                    if (groupedData[time].temp && groupedData[time].humidity) {
+                        timestamps.push(time);
+                        temperatures.push(groupedData[time].temp);
+                        humidities.push(groupedData[time].humidity);
+                    }
+                }
+
+                weatherChart.data.labels = timestamps;
+                weatherChart.data.datasets[0].data = temperatures;
+                weatherChart.data.datasets[1].data = humidities;
+                weatherChart.update();
+
+            } catch (error) {
+                console.error("Error fetching data:", error);
+            }
+        }
+
+        // Initial fetch for historical data
+        fetchWeatherData();
+    </script>
+
+</body>
+</html>
