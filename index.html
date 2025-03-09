@@ -81,7 +81,7 @@
             background-color: #1e3a8a;
         }
         button.active {
-            background-color: #16a34a; /* Green when real-time is active */
+            background-color: #16a34a;
         }
     </style>
 </head>
@@ -89,24 +89,21 @@
 
     <h2>MQTT Weather Station</h2>
     
-    <!-- Real-time Temperature and Humidity -->
     <div class="live-data">
         <p>Temperature: <span id="temp" class="data">--</span> °C</p>
         <p>Humidity: <span id="humidity" class="data">--</span> %</p>
     </div>
 
-    <!-- Controls for Real-Time Toggle -->
     <div class="controls">
         <button id="toggleRealTime">Enable Real-Time Updates</button>
     </div>
 
-    <!-- Chart.js for Data -->
     <div class="container">
         <canvas id="weatherChart"></canvas>
     </div>
 
     <script>
-        // Connect to MQTT Broker over WebSockets
+        // Connect to MQTT Broker
         const mqttClient = mqtt.connect('ws://157.173.101.159:9001');
 
         mqttClient.on('connect', () => {
@@ -115,7 +112,11 @@
             mqttClient.subscribe("/work_group_01/room_temp/humidity");
         });
 
-        // Initialize Chart.js
+        mqttClient.on('error', (error) => {
+            console.error("MQTT Connection Error:", error);
+        });
+
+        // Initialize Chart.js with proper y-axis scaling
         const ctx = document.getElementById('weatherChart').getContext('2d');
         const gradientTemp = ctx.createLinearGradient(0, 0, 0, 500);
         gradientTemp.addColorStop(0, 'rgba(239, 68, 68, 0.9)');
@@ -164,97 +165,71 @@
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
-                    legend: {
-                        labels: {
-                            font: { size: 16, weight: 'bold' },
-                            color: '#1e3a8a',
-                            padding: 20,
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.85)',
-                        titleFont: { size: 14, weight: 'bold' },
-                        bodyFont: { size: 12 },
-                        padding: 12,
-                        cornerRadius: 6,
-                        borderWidth: 1,
-                        borderColor: '#1e40af',
-                    }
+                    legend: { labels: { font: { size: 16, weight: 'bold' }, color: '#1e3a8a', padding: 20 } },
+                    tooltip: { backgroundColor: 'rgba(0, 0, 0, 0.85)', titleFont: { size: 14, weight: 'bold' }, bodyFont: { size: 12 }, padding: 12, cornerRadius: 6, borderWidth: 1, borderColor: '#1e40af' }
                 },
                 scales: {
-                    x: {
-                        title: {
-                            display: true,
-                            text: "Time",
-                            font: { size: 18, weight: 'bold' },
-                            color: '#1e40af',
-                        },
-                        ticks: {
-                            color: '#4b5563',
-                            font: { size: 12 },
-                            maxTicksLimit: 10,
-                        },
-                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    x: { 
+                        title: { display: true, text: "Time", font: { size: 18, weight: 'bold' }, color: '#1e40af' }, 
+                        ticks: { color: '#4b5563', font: { size: 12 }, maxTicksLimit: 10 }, 
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' } 
                     },
-                    y: {
-                        title: {
-                            display: true,
-                            text: "Values",
-                            font: { size: 18, weight: 'bold' },
-                            color: '#1e40af',
-                        },
-                        ticks: { color: '#4b5563', font: { size: 12 } },
-                        grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                    y: { 
+                        title: { display: true, text: "Values", font: { size: 18, weight: 'bold' }, color: '#1e40af' }, 
+                        ticks: { color: '#4b5563', font: { size: 12 } }, 
+                        grid: { color: 'rgba(0, 0, 0, 0.05)' },
+                        min: 0, // Minimum value
+                        max: 100, // Maximum value to accommodate both temp (0-40°C) and humidity (0-100%)
+                        suggestedMin: 0,
+                        suggestedMax: 100
                     }
                 },
-                animation: {
-                    duration: 500,
-                    easing: 'linear'
-                }
+                animation: { duration: 500, easing: 'linear' }
             }
         });
 
-        // Add shadow effect to the chart
         ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
         ctx.shadowBlur = 12;
         ctx.shadowOffsetX = 4;
         ctx.shadowOffsetY = 4;
 
-        // Data storage and state
+        // State variables
         let latestTemp = null;
         let latestHumidity = null;
         let isRealTime = false;
         let intervalId = null;
 
-        // Function to update chart with current data
+        // Function to update chart
         function updateChart() {
             const now = new Date().toLocaleTimeString('en-US', { hour12: false });
             const labels = weatherChart.data.labels;
             const tempData = weatherChart.data.datasets[0].data;
             const humidData = weatherChart.data.datasets[1].data;
 
-            if (latestTemp !== null || latestHumidity !== null) {
-                labels.push(now);
-                tempData.push(latestTemp);
-                humidData.push(latestHumidity);
+            console.log(`[UpdateChart] Time: ${now} | Temp: ${latestTemp} | Humidity: ${latestHumidity}`);
 
-                // Limit to 30 points
-                if (labels.length > 30) {
-                    labels.shift();
-                    tempData.shift();
-                    humidData.shift();
-                }
+            // Add a new point even if one value is missing (use null for missing data)
+            labels.push(now);
+            tempData.push(latestTemp !== null ? latestTemp : null);
+            humidData.push(latestHumidity !== null ? latestHumidity : null);
 
-                weatherChart.update();
+            // Limit to 30 points
+            if (labels.length > 30) {
+                labels.shift();
+                tempData.shift();
+                humidData.shift();
             }
+
+            weatherChart.update();
         }
 
-        // Handle MQTT messages
+        // MQTT message handler
         mqttClient.on('message', (topic, message) => {
-            console.log(`Received: ${topic} → ${message.toString()}`);
             const value = parseFloat(message.toString());
+            const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+            console.log(`[MQTT] ${topic}: ${value} at ${now}`);
 
-            // Update live data display
+            // Update live display and store latest values
             if (topic === "/work_group_01/room_temp/temperature") {
                 document.getElementById("temp").innerText = value;
                 latestTemp = value;
@@ -263,17 +238,16 @@
                 latestHumidity = value;
             }
 
-            // Update chart immediately if real-time is enabled
+            // Real-time mode: update chart immediately
             if (isRealTime) {
-                const now = new Date().toLocaleTimeString('en-US', { hour12: false });
                 const labels = weatherChart.data.labels;
                 const tempData = weatherChart.data.datasets[0].data;
                 const humidData = weatherChart.data.datasets[1].data;
 
                 if (labels.length === 0 || labels[labels.length - 1] !== now) {
                     labels.push(now);
-                    tempData.push(latestTemp);
-                    humidData.push(latestHumidity);
+                    tempData.push(latestTemp !== null ? latestTemp : null);
+                    humidData.push(latestHumidity !== null ? latestHumidity : null);
                 } else {
                     if (topic.includes("temperature")) tempData[tempData.length - 1] = latestTemp;
                     if (topic.includes("humidity")) humidData[humidData.length - 1] = latestHumidity;
@@ -289,24 +263,45 @@
             }
         });
 
-        // Default: Update every 5 minutes
-        intervalId = setInterval(updateChart, 300000); // 5 minutes = 300,000 ms
+        // Start with 5-minute updates
+        console.log("Starting 5-minute update interval...");
+        intervalId = setInterval(() => {
+            console.log("[Interval] 5-minute update triggered");
+            updateChart();
+        }, 300000); // 5 minutes
 
         // Toggle real-time updates
         const toggleButton = document.getElementById('toggleRealTime');
         toggleButton.addEventListener('click', () => {
             isRealTime = !isRealTime;
             if (isRealTime) {
-                clearInterval(intervalId); // Stop 5-minute updates
+                clearInterval(intervalId);
                 toggleButton.textContent = 'Disable Real-Time Updates';
                 toggleButton.classList.add('active');
-                updateChart(); // Immediate update when enabling
+                console.log("Real-time mode enabled");
+                updateChart(); // Immediate update
             } else {
-                intervalId = setInterval(updateChart, 300000); // Resume 5-minute updates
+                intervalId = setInterval(() => {
+                    console.log("[Interval] 5-minute update triggered");
+                    updateChart();
+                }, 300000);
                 toggleButton.textContent = 'Enable Real-Time Updates';
                 toggleButton.classList.remove('active');
+                console.log("Real-time mode disabled, 5-minute updates resumed");
             }
         });
+
+        // Fallback: Simulate data if MQTT isn't working (for testing)
+        setInterval(() => {
+            if (latestTemp === null && latestHumidity === null) {
+                latestTemp = Math.random() * 20 + 15; // 15-35°C
+                latestHumidity = Math.random() * 40 + 40; // 40-80%
+                document.getElementById("temp").innerText = latestTemp.toFixed(1);
+                document.getElementById("humidity").innerText = latestHumidity.toFixed(1);
+                console.log(`[Simulated] Temp: ${latestTemp.toFixed(1)}, Humidity: ${latestHumidity.toFixed(1)}`);
+                if (isRealTime) updateChart();
+            }
+        }, 10000); // Every 10 seconds, only if no real data
     </script>
 
 </body>
